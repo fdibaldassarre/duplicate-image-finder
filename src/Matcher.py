@@ -8,7 +8,33 @@ from sklearn.neighbors import BallTree
 import numpy as np
 
 
-def get_image(path):
+class _open_shelve_db:
+    """
+    Open a shelve db. Will automatically remove the file extension.
+    Allows empty db_path, in that case the returned db will be a
+    dictionary.
+    """
+
+    def __init__(self, db_path, **kwargs):
+        self.db_path = db_path
+        self.kwargs = kwargs
+
+    def __enter__(self):
+        if self.db_path is None:
+            self.db = dict()
+            self.close_db = False
+        else:
+            db_name, _ = os.path.splitext(self.db_path)
+            self.db = shelve.open(db_name, **self.kwargs)
+            self.close_db = True
+        return self.db
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.close_db:
+            self.db.close()
+
+
+def _get_image(path):
     if not os.path.isfile(path):
         return None
     try:
@@ -17,10 +43,11 @@ def get_image(path):
         return None
 
 
-def numpy_hash_to_str(arr):
+def _numpy_hash_to_str(arr):
     """
     This function is a copy of _binary_array_to_hex
-    in imagehash
+    in imagehash.
+
     :param arr:
     :return:
     """
@@ -29,26 +56,26 @@ def numpy_hash_to_str(arr):
     return '{:0>{width}x}'.format(int(bit_string, 2), width=width)
 
 
-def iter_folder(folder):
+def _iter_folder(folder):
     for name in os.listdir(folder):
         path = os.path.join(folder, name)
-        image = get_image(path)
+        image = _get_image(path)
         if image is not None:
             yield (path, image)
 
 
-def iter_recursive(folder):
+def _iter_recursive(folder):
     for dirpath, dirnames, filenames in os.walk(folder):
         for name in filenames:
             path = os.path.join(dirpath, name)
-            image = get_image(path)
+            image = _get_image(path)
             if image is not None:
                 yield(path, image)
 
 
 def index_folder(folder, db_path, recursive=True):
-    with shelve.open(db_path, flag='c', writeback=True) as db:
-        iterator = iter_recursive(folder) if recursive else iter_folder(folder)
+    with _open_shelve_db(db_path, flag='c', writeback=True) as db:
+        iterator = _iter_recursive(folder) if recursive else _iter_folder(folder)
         for path, image in iterator:
             hash = str(imagehash.whash(image))
             dup_path = db.get(hash)
@@ -59,9 +86,8 @@ def index_folder(folder, db_path, recursive=True):
 
 
 def match_image(path, db_path):
-    db_name, _ = os.path.splitext(db_path)
-    with shelve.open(db_name, flag='r') as db:
-        image = get_image(path)
+    with _open_shelve_db(db_path, flag='r') as db:
+        image = _get_image(path)
         if image is None:
             print("Invalid image")
             return
@@ -74,9 +100,8 @@ def match_image(path, db_path):
 
 
 def match_similar(path, db_path, threshold=5):
-    db_name, _ = os.path.splitext(db_path)
-    with shelve.open(db_name, flag='r') as db:
-        image = get_image(path)
+    with _open_shelve_db(db_path, flag='r') as db:
+        image = _get_image(path)
         if image is None:
             print("Invalid image")
             return
@@ -88,22 +113,37 @@ def match_similar(path, db_path, threshold=5):
                 print("Duplicate %s" % path)
 
 
-def get_all_hashes(folder, db_path, recursive=True):
-    db_name, _ = os.path.splitext(db_path)
-    with shelve.open(db_name, flag='n') as db:
+def _get_all_hashes(folder, db_path, db_flag='c', recursive=True):
+    with _open_shelve_db(db_path, flag=db_flag) as db:
         paths = []
         hashes_matrix = []
-        perfect_matches = dict()
-        iterator = iter_recursive(folder) if recursive else iter_folder(folder)
+        paths_dict = dict()  # Map from path to hash
+        # Add hashes from the database itself
+        for hash_str in db:
+            hash = imagehash.hex_to_hash(hash_str)
+            path = db.get(hash_str)
+            paths.append(path)
+            paths_dict[path] = hash
+            hashes_matrix.append(hash.hash.reshape(1, -1))
+        # Add hashes from the folder
+        hash_to_file = dict()  # Map from hash to list of files with that hash
+        iterator = _iter_recursive(folder) if recursive else _iter_folder(folder)
         for path, image in iterator:
-            hash = imagehash.whash(image)
-            hash_str = str(hash)
-            dup_path = db.get(hash_str)
+            if path in paths_dict:
+                # I already have this hash
+                hash = paths_dict[path]
+                hash_str = str(hash)
+                dup_path = path
+            else:
+                # Re-compute the hash
+                hash = imagehash.whash(image)
+                hash_str = str(hash)
+                dup_path = db.get(hash_str)
             if dup_path is not None:
                 # Add to duplicates list
-                if hash_str not in perfect_matches:
-                    perfect_matches[hash_str] = []
-                perfect_matches[hash_str].append(path)
+                if hash_str not in hash_to_file:
+                    hash_to_file[hash_str] = []
+                hash_to_file[hash_str].append(path)
             else:
                 # Save on DB
                 db[hash_str] = path
@@ -112,40 +152,24 @@ def get_all_hashes(folder, db_path, recursive=True):
                 # Add internal hash (numpy array) with shape (0, n_features)
                 hashes_matrix.append(hash.hash.reshape(1, -1))
     hashes_matrix = np.concatenate(hashes_matrix)  # final shape should be (n_samples, n_features)
-    return paths, hashes_matrix, perfect_matches
+    return paths, hashes_matrix, hash_to_file
 
 
-def get_all_hashes_from_db(db_path):
-    paths = []
-    hashes_matrix = []
-    db_name, _ = os.path.splitext(db_path)
-    with shelve.open(db_name, flag='r') as db:
-        for hash_str in db:
-            hash = imagehash.hex_to_hash(hash_str)
-            path = db.get(hash_str)
-            paths.append(path)
-            hashes_matrix.append(hash.hash.reshape(1, -1))
-    hashes_matrix = np.concatenate(hashes_matrix)
-    return paths, hashes_matrix, []
-
-
-def build_tree(hashes_matrix):
+def _build_tree(hashes_matrix):
     return BallTree(hashes_matrix, metric='hamming')
 
 
-def find_similar_hashes(hash, tree, threshold):
+def _find_similar_hashes(hash, tree, threshold):
     needle = hash.reshape(1, -1)
     result = tree.query_radius(needle, threshold)
     return result[0]
 
 
-def find_similar(db_path, folder=None, recursive=True, threshold=0.3):
-    if folder is None:
-        paths, hashes_matrix, perfect_matches = get_all_hashes_from_db(db_path)
-    else:
-        paths, hashes_matrix, perfect_matches = get_all_hashes(folder, db_path, recursive=recursive)
+def find_similar(folder, recursive=True, threshold=0.3, db_path=None):
+    # Read data from folder and db
+    paths, hashes_matrix, hash_to_file = _get_all_hashes(folder, db_path, recursive=recursive)
     # Build the tree
-    ball_tree = build_tree(hashes_matrix)
+    ball_tree = _build_tree(hashes_matrix)
     marked_duplicates = dict()  # A list of paths already marked as duplicates
     # Find all the matches
     for i in range(len(paths)):
@@ -157,17 +181,16 @@ def find_similar(db_path, folder=None, recursive=True, threshold=0.3):
         hash = hashes_matrix[i]
         all_duplicates = []
         # Find similar hashes
-        similar = find_similar_hashes(hash, ball_tree, threshold=threshold)
+        similar = _find_similar_hashes(hash, ball_tree, threshold=threshold)
         for el in similar:
-            # Add the perfect hash matches
-            dup_hash = hashes_matrix[el]
-            dup_hash_str = numpy_hash_to_str(dup_hash)
-            if dup_hash_str in perfect_matches:
-                all_duplicates.extend(perfect_matches[dup_hash_str])
-            if el == i:  # Remove the image itself from results
-                continue
+            # Add the paths for every match
+            # Every hash has a list of mat
             dup_path = paths[el]
-            all_duplicates.append(dup_path)
+            dup_hash = hashes_matrix[el]
+            dup_hash_str = _numpy_hash_to_str(dup_hash)
+            for match in hash_to_file[dup_hash_str]:
+                if match != path:
+                    all_duplicates.append(match)
             marked_duplicates[dup_path] = True
         # Print the results
         if len(all_duplicates) > 0:
