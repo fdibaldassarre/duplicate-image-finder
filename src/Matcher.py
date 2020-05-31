@@ -114,6 +114,8 @@ def match_similar(path, db_path, threshold=5):
 
 
 def _get_all_hashes(folder, db_path, db_flag='c', recursive=True):
+    ## FIXME: db should be a map from hash -> list of paths
+    ## or path: hash
     with _open_shelve_db(db_path, flag=db_flag) as db:
         paths = []
         hashes_matrix = []
@@ -139,12 +141,11 @@ def _get_all_hashes(folder, db_path, db_flag='c', recursive=True):
                 hash = imagehash.whash(image)
                 hash_str = str(hash)
                 dup_path = db.get(hash_str)
-            if dup_path is not None:
-                # Add to duplicates list
-                if hash_str not in hash_to_file:
-                    hash_to_file[hash_str] = []
-                hash_to_file[hash_str].append(path)
-            else:
+            # Add to reverse map
+            if hash_str not in hash_to_file:
+                hash_to_file[hash_str] = []
+            hash_to_file[hash_str].append(path)
+            if dup_path is None:
                 # Save on DB
                 db[hash_str] = path
                 # Add to hash_matrix
@@ -165,7 +166,7 @@ def _find_similar_hashes(hash, tree, threshold):
     return result[0]
 
 
-def find_similar(folder, recursive=True, threshold=0.3, db_path=None):
+def find_similar(folder, recursive=True, threshold=0.1, db_path=None):
     # Read data from folder and db
     paths, hashes_matrix, hash_to_file = _get_all_hashes(folder, db_path, recursive=recursive)
     # Build the tree
