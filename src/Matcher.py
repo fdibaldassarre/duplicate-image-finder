@@ -59,99 +59,67 @@ def _numpy_hash_to_str(arr):
 def _iter_folder(folder):
     for name in os.listdir(folder):
         path = os.path.join(folder, name)
-        image = _get_image(path)
-        if image is not None:
-            yield (path, image)
+        yield path
 
 
 def _iter_recursive(folder):
     for dirpath, dirnames, filenames in os.walk(folder):
         for name in filenames:
             path = os.path.join(dirpath, name)
-            image = _get_image(path)
-            if image is not None:
-                yield(path, image)
+            yield path
 
 
 def index_folder(folder, db_path, recursive=True):
+    """
+    Save all the image hashes on a database.
+
+    :param folder:
+    :param db_path:
+    :param recursive:
+    :return:
+    """
     with _open_shelve_db(db_path, flag='c', writeback=True) as db:
         iterator = _iter_recursive(folder) if recursive else _iter_folder(folder)
-        for path, image in iterator:
-            hash = str(imagehash.whash(image))
-            dup_path = db.get(hash)
-            if dup_path is not None:
-                print("Duplicate image found: %s vs %s" % (path, dup_path))
-            else:
-                db[hash] = path
+        for path in iterator:
+            image = _get_image(path)
+            if image is None:
+                continue
+            db[path] = str(imagehash.whash(image))
 
 
-def match_image(path, db_path):
-    with _open_shelve_db(db_path, flag='r') as db:
-        image = _get_image(path)
-        if image is None:
-            print("Invalid image")
-            return
-        hash = str(imagehash.whash(image))
-        dup_path = db.get(hash)
-        if dup_path is not None:
-            print("Duplicate image found: %s vs %s" % (path, dup_path))
-        else:
-            print("No duplicate found")
-
-
-def match_similar(path, db_path, threshold=5):
-    with _open_shelve_db(db_path, flag='r') as db:
-        image = _get_image(path)
-        if image is None:
-            print("Invalid image")
-            return
-        hash = imagehash.whash(image)
-        for hex in db:
-            dhash = imagehash.hex_to_hash(hex)
-            if hash - dhash < threshold:
-                path = db.get(hex)
-                print("Duplicate %s" % path)
-
-
-def _get_all_hashes(folder, db_path, db_flag='c', recursive=True):
-    ## FIXME: db should be a map from hash -> list of paths
-    ## or path: hash
-    with _open_shelve_db(db_path, flag=db_flag) as db:
+def _get_all_hashes(folder, db_path=None, db_flag='c', recursive=True):
+    with _open_shelve_db(db_path, flag=db_flag, writeback=True) as db:
         paths = []
         hashes_matrix = []
-        paths_dict = dict()  # Map from path to hash
-        # Add hashes from the database itself
-        for hash_str in db:
-            hash = imagehash.hex_to_hash(hash_str)
-            path = db.get(hash_str)
-            paths.append(path)
-            paths_dict[path] = hash
-            hashes_matrix.append(hash.hash.reshape(1, -1))
-        # Add hashes from the folder
         hash_to_file = dict()  # Map from hash to list of files with that hash
+        # Add hashes from the folder
         iterator = _iter_recursive(folder) if recursive else _iter_folder(folder)
-        for path, image in iterator:
-            if path in paths_dict:
-                # I already have this hash
-                hash = paths_dict[path]
-                hash_str = str(hash)
-                dup_path = path
-            else:
-                # Re-compute the hash
+        for path in iterator:
+            hash_str = db.get(path)
+            if hash_str is None:
+                # Re-compute the image hash
+                image = _get_image(path)
+                if image is None:
+                    # Not an image file
+                    continue
                 hash = imagehash.whash(image)
                 hash_str = str(hash)
-                dup_path = db.get(hash_str)
-            # Add to reverse map
+                if db_path is not None:
+                    # Save on DB
+                    db[path] = hash_str
+            else:
+                hash = imagehash.hex_to_hash(hash_str)
+            # Check If I already have this hash
             if hash_str not in hash_to_file:
-                hash_to_file[hash_str] = []
-            hash_to_file[hash_str].append(path)
-            if dup_path is None:
-                # Save on DB
-                db[hash_str] = path
+                # New hash!
+                hash_to_file[hash_str] = [path]
                 # Add to hash_matrix
                 paths.append(path)
                 # Add internal hash (numpy array) with shape (0, n_features)
                 hashes_matrix.append(hash.hash.reshape(1, -1))
+            else:
+                # Old hash
+                hash_to_file[hash_str].append(path)
     hashes_matrix = np.concatenate(hashes_matrix)  # final shape should be (n_samples, n_features)
     return paths, hashes_matrix, hash_to_file
 
@@ -166,7 +134,8 @@ def _find_similar_hashes(hash, tree, threshold):
     return result[0]
 
 
-def find_similar(folder, recursive=True, threshold=0.1, db_path=None):
+def find_similar(folder, recursive=True, threshold=0.1, db_path=None, print_result=True):
+    result = dict()
     # Read data from folder and db
     paths, hashes_matrix, hash_to_file = _get_all_hashes(folder, db_path, recursive=recursive)
     # Build the tree
@@ -183,21 +152,22 @@ def find_similar(folder, recursive=True, threshold=0.1, db_path=None):
         all_duplicates = []
         # Find similar hashes
         similar = _find_similar_hashes(hash, ball_tree, threshold=threshold)
-        for el in similar:
-            # Add the paths for every match
-            # Every hash has a list of mat
-            dup_path = paths[el]
-            dup_hash = hashes_matrix[el]
+        for index in similar:
+            # Add the paths for every matched hash
+            dup_hash = hashes_matrix[index]
             dup_hash_str = _numpy_hash_to_str(dup_hash)
             for match in hash_to_file[dup_hash_str]:
                 if match != path:
                     all_duplicates.append(match)
-            marked_duplicates[dup_path] = True
+                    marked_duplicates[match] = True
         # Print the results
         if len(all_duplicates) > 0:
-            print("Duplicates found for %s" % path)
             all_duplicates = sorted(all_duplicates)
-            for dup in all_duplicates:
-                print(dup)
-            print("========================")
+            result[path] = all_duplicates
+            if print_result:
+                print("Duplicates found for %s" % path)
+                for dup in all_duplicates:
+                    print(dup)
+                print("========================")
+    return result
 
