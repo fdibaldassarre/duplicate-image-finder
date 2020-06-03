@@ -3,6 +3,7 @@
 import imagehash
 import os
 import shelve
+import shutil
 from PIL import Image
 from sklearn.neighbors import BallTree
 import numpy as np
@@ -134,7 +135,19 @@ def _find_similar_hashes(hash, tree, threshold):
     return result[0]
 
 
-def find_similar(folder, recursive=True, threshold=0.1, db_path=None, print_result=True):
+def find_similar(folder, recursive=True, threshold=0.1, db_path=None,
+                 print_result=False, duplicates_folder=None):
+    """
+    Find duplicate images in a folder
+
+    :param folder: Folder to look for images
+    :param recursive: true if should look under subfolders recursively
+    :param threshold: threshold under which images are considered duplicates
+    :param db_path: db to load hashes from (instead of recalculating)
+    :param print_result: True if I should print the result to screen
+    :param duplicates_folder: folder where the duplicate files will be moved to
+    :return:
+    """
     result = dict()
     # Read data from folder and db
     paths, hashes_matrix, hash_to_file = _get_all_hashes(folder, db_path, recursive=recursive)
@@ -164,10 +177,73 @@ def find_similar(folder, recursive=True, threshold=0.1, db_path=None, print_resu
         if len(all_duplicates) > 0:
             all_duplicates = sorted(all_duplicates)
             result[path] = all_duplicates
-            if print_result:
+            if duplicates_folder is not None:
+                # Keep the file with higher size
+                # and move the other to duplicates
+                # Also save a file with original paths
+                _move_to_duplicates_folder(len(result), duplicates_folder, path, *all_duplicates)
+            elif print_result:
                 print("Duplicates found for %s" % path)
                 for dup in all_duplicates:
                     print(dup)
                 print("========================")
     return result
 
+
+def _move_to_duplicates_folder(id, folder, *all_paths):
+    """
+    Keep the best image where it is and move all the others
+    to a subfolder. Save a file with the original paths.
+
+    :param id: unique id for the folder, used to avoid name clashing
+    :param folder: folder where to move the files
+    :param paths: duplicate files, will move everything except the best file
+    :return: best path
+    """
+    # Consider a file only if it was not moved before
+    # Note: a file can be considered a duplicate of 2 different files
+    # i.e. a file can belong to two different clusters of duplicates
+    paths = list(filter(lambda path: os.path.exists(path), all_paths))
+    if len(paths) < 2:
+        return paths[0]
+    # Find the best image
+    best = _get_best_image(paths)
+    # Create target folder and move the duplicates (except the best image)
+    best_name = os.path.basename(best)
+    subfolder_name = "%d_%s" % (id, best_name)
+    target_folder = os.path.join(folder, subfolder_name)
+    os.makedirs(target_folder, exist_ok=True)
+    recap_path = os.path.join(target_folder, "original_locations.txt")
+    # Create symlink to best image (use abs path)
+    best_link = os.path.join(target_folder, "0_%s" % best_name)
+    os.symlink(os.path.abspath(best), best_link)
+    with open(recap_path, "a") as recap:
+        fileid = 1
+        for path in paths:
+            if path != best:
+                basename = os.path.basename(path)
+                target_name = "%d_%s" % (fileid, basename)
+                target_path = os.path.join(target_folder, target_name)
+                recap.write("%s: %s\n" % (target_name, path))
+                shutil.move(path, target_path)
+                fileid += 1
+    return best
+
+
+def _get_best_image(paths):
+    """
+    Return the best image.
+    We will return the image with the highest resolution, a PNG in case of a tie.
+
+    :param paths:
+    :return: path of the best image
+    """
+    best = None
+    best_res = None
+    for path in paths:
+        image = Image.open(path)
+        _, resolution = image.size
+        if best is None or resolution > best_res or (resolution == best_res and image.format == 'PNG'):
+            best = path
+            best_res = resolution
+    return best
