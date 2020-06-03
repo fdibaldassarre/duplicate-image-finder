@@ -13,10 +13,17 @@ pip install -r requirements.txt
 ```sh
 ./findDuplicates.py /path/to/some/folder
 ```
+will output the list of duplicate files.
 
-It is possible to save the computed hashes using the --db flag
+To move the duplicates in a dedicated folder use the `--move-duplicates` flag
+
+```sh
+./findDuplicates.py /path/to/some/folder --move-duplicates /path/to/duplicates/folder
+```
+
+It is possible to read and save the computed hashes using the `--db` flag
 
 ```sh
 ./findDuplicates.py /path/to/some/folder --db data
 ```
-which will save a data.db file.
+Storing the hashes in a database reduces execution time if the script is run multiple times on the same files.
