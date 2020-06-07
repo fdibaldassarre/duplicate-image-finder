@@ -8,6 +8,9 @@ from PIL import Image
 from sklearn.neighbors import BallTree
 import numpy as np
 
+from .Common import iter_folder
+from .Common import iter_recursive
+
 
 class _open_shelve_db:
     """
@@ -35,13 +38,29 @@ class _open_shelve_db:
             self.db.close()
 
 
-def _get_image(path):
-    if not os.path.isfile(path):
-        return None
-    try:
-        return Image.open(path)
-    except Exception as e:
-        return None
+class _open_image:
+    """
+    Open a PIL Image, if possible. Return None if the given path
+    is not a valid image.
+
+    """
+    def __init__(self, path):
+        self.path = path
+        self.resource = None
+
+    def __enter__(self):
+        if not os.path.isfile(self.path):
+            self.resource = None
+        else:
+            try:
+                self.resource = Image.open(self.path)
+            except Exception as e:
+                self.resource = None
+        return self.resource
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.resource is not None:
+            self.resource.close()
 
 
 def _numpy_hash_to_str(arr):
@@ -57,19 +76,6 @@ def _numpy_hash_to_str(arr):
     return '{:0>{width}x}'.format(int(bit_string, 2), width=width)
 
 
-def _iter_folder(folder):
-    for name in os.listdir(folder):
-        path = os.path.join(folder, name)
-        yield path
-
-
-def _iter_recursive(folder):
-    for dirpath, dirnames, filenames in os.walk(folder):
-        for name in filenames:
-            path = os.path.join(dirpath, name)
-            yield path
-
-
 def index_folder(folder, db_path, recursive=True):
     """
     Save all the image hashes on a database.
@@ -80,12 +86,12 @@ def index_folder(folder, db_path, recursive=True):
     :return:
     """
     with _open_shelve_db(db_path, flag='c', writeback=True) as db:
-        iterator = _iter_recursive(folder) if recursive else _iter_folder(folder)
+        iterator = iter_recursive(folder) if recursive else iter_folder(folder)
         for path in iterator:
-            image = _get_image(path)
-            if image is None:
-                continue
-            db[path] = str(imagehash.whash(image))
+            with _open_image(path) as image:
+                if image is None:
+                    continue
+                db[path] = str(imagehash.whash(image))
 
 
 def _get_all_hashes(folder, db_path=None, db_flag='c', recursive=True):
@@ -94,16 +100,16 @@ def _get_all_hashes(folder, db_path=None, db_flag='c', recursive=True):
         hashes_matrix = []
         hash_to_file = dict()  # Map from hash to list of files with that hash
         # Add hashes from the folder
-        iterator = _iter_recursive(folder) if recursive else _iter_folder(folder)
+        iterator = iter_recursive(folder) if recursive else iter_folder(folder)
         for path in iterator:
             hash_str = db.get(path)
             if hash_str is None:
                 # Re-compute the image hash
-                image = _get_image(path)
-                if image is None:
-                    # Not an image file
-                    continue
-                hash = imagehash.whash(image)
+                with _open_image(path) as image:
+                    if image is None:
+                        # Not an image file
+                        continue
+                    hash = imagehash.whash(image)
                 hash_str = str(hash)
                 if db_path is not None:
                     # Save on DB
@@ -241,9 +247,9 @@ def _get_best_image(paths):
     best = None
     best_res = None
     for path in paths:
-        image = Image.open(path)
-        _, resolution = image.size
-        if best is None or resolution > best_res or (resolution == best_res and image.format == 'PNG'):
-            best = path
-            best_res = resolution
+        with Image.open(path) as image:
+            _, resolution = image.size
+            if best is None or resolution > best_res or (resolution == best_res and image.format == 'PNG'):
+                best = path
+                best_res = resolution
     return best
