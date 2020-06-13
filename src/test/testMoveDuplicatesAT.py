@@ -32,10 +32,10 @@ class MoveDuplicatesAT(Common):
         self.assertArrayEquals(duplicates_folders, ["1_005.png", "2_002.png"])
         # Verify the cat duplicates
         duplicates_cat = os.listdir(os.path.join(self.duplicates_folder, "1_005.png"))
-        self.assertArrayEquals(duplicates_cat, ["0_005.png", "1_001.jpg", "2_003.jpg", "original_locations.txt"])
+        self.assertArrayEquals(duplicates_cat, ["0_005.png", "1_001.jpg", "2_003.jpg", "info.json"])
         # Verify the house duplicates
         house_duplicates = os.listdir(os.path.join(self.duplicates_folder, "2_002.png"))
-        self.assertArrayEquals(house_duplicates, ["0_002.png", "1_006.jpg", "original_locations.txt"])
+        self.assertArrayEquals(house_duplicates, ["0_002.png", "1_006.jpg", "info.json"])
         # And the unique files are still in the original folder
         cat_unique = os.path.join(self.test_folder, "folder1/005.png")
         house_unique = os.path.join(self.test_folder, "002.png")
