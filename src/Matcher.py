@@ -8,34 +8,11 @@ from PIL import Image
 from sklearn.neighbors import BallTree
 import numpy as np
 
+from .Common import write_info_file
+from .Common import write_restore_info
 from .Common import iter_folder
 from .Common import iter_recursive
-
-
-class _open_shelve_db:
-    """
-    Open a shelve db. Will automatically remove the file extension.
-    Allows empty db_path, in that case the returned db will be a
-    dictionary.
-    """
-
-    def __init__(self, db_path, **kwargs):
-        self.db_path = db_path
-        self.kwargs = kwargs
-
-    def __enter__(self):
-        if self.db_path is None:
-            self.db = dict()
-            self.close_db = False
-        else:
-            db_name, _ = os.path.splitext(self.db_path)
-            self.db = shelve.open(db_name, **self.kwargs)
-            self.close_db = True
-        return self.db
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.close_db:
-            self.db.close()
+from .Common import open_shelve_db
 
 
 class _open_image:
@@ -85,7 +62,7 @@ def index_folder(folder, db_path, recursive=True):
     :param recursive:
     :return:
     """
-    with _open_shelve_db(db_path, flag='c', writeback=True) as db:
+    with open_shelve_db(db_path, flag='c', writeback=True) as db:
         iterator = iter_recursive(folder) if recursive else iter_folder(folder)
         for path in iterator:
             with _open_image(path) as image:
@@ -95,7 +72,7 @@ def index_folder(folder, db_path, recursive=True):
 
 
 def _get_all_hashes(folder, db_path=None, db_flag='c', recursive=True):
-    with _open_shelve_db(db_path, flag=db_flag, writeback=True) as db:
+    with open_shelve_db(db_path, flag=db_flag, writeback=True) as db:
         paths = []
         hashes_matrix = []
         hash_to_file = dict()  # Map from hash to list of files with that hash
@@ -142,7 +119,7 @@ def _find_similar_hashes(hash, tree, threshold):
 
 
 def find_similar(folder, recursive=True, threshold=0.1, db_path=None,
-                 print_result=False, duplicates_folder=None):
+                 false_positives_db_path=None, print_result=False, duplicates_folder=None):
     """
     Find duplicate images in a folder
 
@@ -150,11 +127,17 @@ def find_similar(folder, recursive=True, threshold=0.1, db_path=None,
     :param recursive: true if should look under subfolders recursively
     :param threshold: threshold under which images are considered duplicates
     :param db_path: db to load hashes from (instead of recalculating)
+    :param false_positives_db_path: db to load the false positives from
     :param print_result: True if I should print the result to screen
     :param duplicates_folder: folder where the duplicate files will be moved to
     :return:
     """
     result = dict()
+    # Save restore info
+    if duplicates_folder is not None:
+        write_restore_info(duplicates_folder, false_positives_db_path)
+    # Read the false positives
+    # TODO
     # Read data from folder and db
     paths, hashes_matrix, hash_to_file = _get_all_hashes(folder, db_path, recursive=recursive)
     # Build the tree
@@ -187,7 +170,8 @@ def find_similar(folder, recursive=True, threshold=0.1, db_path=None,
                 # Keep the file with higher size
                 # and move the other to duplicates
                 # Also save a file with original paths
-                _move_to_duplicates_folder(len(result), duplicates_folder, path, *all_duplicates)
+                _move_to_duplicates_folder(len(result), duplicates_folder, false_positives_db_path,
+                                           path, *all_duplicates)
             elif print_result:
                 print("Duplicates found for %s" % path)
                 for dup in all_duplicates:
@@ -203,7 +187,7 @@ def _move_to_duplicates_folder(id, folder, *all_paths):
 
     :param id: unique id for the folder, used to avoid name clashing
     :param folder: folder where to move the files
-    :param paths: duplicate files, will move everything except the best file
+    :param all_paths: duplicate files, will move everything except the best file
     :return: best path
     """
     # Consider a file only if it was not moved before
@@ -219,20 +203,22 @@ def _move_to_duplicates_folder(id, folder, *all_paths):
     subfolder_name = "%d_%s" % (id, best_name)
     target_folder = os.path.join(folder, subfolder_name)
     os.makedirs(target_folder, exist_ok=True)
-    recap_path = os.path.join(target_folder, "original_locations.txt")
     # Create symlink to best image (use abs path)
     best_link = os.path.join(target_folder, "0_%s" % best_name)
-    os.symlink(os.path.abspath(best), best_link)
-    with open(recap_path, "a") as recap:
-        fileid = 1
-        for path in paths:
-            if path != best:
-                basename = os.path.basename(path)
-                target_name = "%d_%s" % (fileid, basename)
-                target_path = os.path.join(target_folder, target_name)
-                recap.write("%s: %s\n" % (target_name, path))
-                shutil.move(path, target_path)
-                fileid += 1
+    best_abspath = os.path.abspath(best)
+    os.symlink(best_abspath, best_link)
+    # Move files
+    duplicates = []
+    fileid = 1
+    for path in paths:
+        if path != best:
+            basename = os.path.basename(path)
+            target_name = "%d_%s" % (fileid, basename)
+            target_path = os.path.join(target_folder, target_name)
+            duplicates.append((target_name, path))
+            shutil.move(path, target_path)
+            fileid += 1
+    write_info_file(target_folder, best_abspath, duplicates)
     return best
 
 
