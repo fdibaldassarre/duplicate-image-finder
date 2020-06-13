@@ -67,7 +67,6 @@ def restore(duplicates_path):
             false_positives.append(dest_path)
         # Save the false positives
         _append_false_positives(false_positives_map, false_positives)
-        print(false_positives_map)
         # Remove original locations file
         remove_info_file(path)
         # Remove original symlink

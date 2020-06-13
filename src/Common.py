@@ -97,6 +97,8 @@ def write_restore_info(folder, false_positives_db_path):
     :param false_positives_db_path: Path to the false positives database
     :return:
     """
+    if false_positives_db_path is None:
+        return
     false_positives_db_path = os.path.abspath(false_positives_db_path)
     data = {
         'false_positives_db': false_positives_db_path

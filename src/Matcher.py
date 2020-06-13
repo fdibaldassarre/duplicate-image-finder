@@ -2,7 +2,6 @@
 
 import imagehash
 import os
-import shelve
 import shutil
 from PIL import Image
 from sklearn.neighbors import BallTree
@@ -38,6 +37,21 @@ class _open_image:
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.resource is not None:
             self.resource.close()
+
+
+def _load_false_positives(db_path):
+    """
+    Load false positives in memory
+    :param db_path: false positives db path
+    :return: a map from path to list of false positives
+    """
+    false_positives_map = {}
+    if db_path is None or not os.path.exists(db_path):
+        return false_positives_map
+    with open_shelve_db(db_path, flag='r') as db:
+        for path in db:
+            false_positives_map[path] = [false_path for false_path in db.get(path)]
+    return false_positives_map
 
 
 def _numpy_hash_to_str(arr):
@@ -137,7 +151,7 @@ def find_similar(folder, recursive=True, threshold=0.1, db_path=None,
     if duplicates_folder is not None:
         write_restore_info(duplicates_folder, false_positives_db_path)
     # Read the false positives
-    # TODO
+    FALSE_POSITIVES = _load_false_positives(false_positives_db_path)
     # Read data from folder and db
     paths, hashes_matrix, hash_to_file = _get_all_hashes(folder, db_path, recursive=recursive)
     # Build the tree
@@ -150,6 +164,10 @@ def find_similar(folder, recursive=True, threshold=0.1, db_path=None,
             # Path already marked as duplicate,
             # do not look for duplicates of duplicates
             continue
+        # Get the false positives from this path
+        path_false_positives = []
+        if path in FALSE_POSITIVES:
+            path_false_positives = FALSE_POSITIVES[path]
         hash = hashes_matrix[i]
         all_duplicates = []
         # Find similar hashes
@@ -159,7 +177,7 @@ def find_similar(folder, recursive=True, threshold=0.1, db_path=None,
             dup_hash = hashes_matrix[index]
             dup_hash_str = _numpy_hash_to_str(dup_hash)
             for match in hash_to_file[dup_hash_str]:
-                if match != path:
+                if match != path and match not in path_false_positives:
                     all_duplicates.append(match)
                     marked_duplicates[match] = True
         # Print the results
@@ -170,8 +188,7 @@ def find_similar(folder, recursive=True, threshold=0.1, db_path=None,
                 # Keep the file with higher size
                 # and move the other to duplicates
                 # Also save a file with original paths
-                _move_to_duplicates_folder(len(result), duplicates_folder, false_positives_db_path,
-                                           path, *all_duplicates)
+                _move_to_duplicates_folder(len(result), duplicates_folder, path, *all_duplicates)
             elif print_result:
                 print("Duplicates found for %s" % path)
                 for dup in all_duplicates:
