@@ -6,6 +6,8 @@ import shutil
 from PIL import Image
 from sklearn.neighbors import BallTree
 import numpy as np
+import concurrent  # Requires Python 3.2
+from queue import Queue
 
 from .Common import write_info_file
 from .Common import write_restore_info
@@ -86,28 +88,74 @@ def index_folder(folder, db_path, recursive=True):
                 db[path] = str(imagehash.whash(image))
 
 
+def _compute_hash(path, hash_str):
+    """
+    Compute the hash for a path.
+    If hash_str is provided will return is de-serialization.
+
+    :param path:
+    :param hash_str: Serialized hash retrived from the db.
+    :return:
+    """
+    if hash_str is None:
+        # Re-compute the image hash
+        with _open_image(path) as image:
+            if image is None:
+                return None, None
+            image_hash = imagehash.whash(image)
+        hash_str = str(image_hash)
+    else:
+        image_hash = imagehash.hex_to_hash(hash_str)
+    return image_hash, hash_str
+
+
+def _compute_hash_and_put(path, hash_str, queue):
+    """
+    Compute the hash for an image and put it on a queue.
+
+    :param path:
+    :param hash_str:
+    :param queue:
+    :return:
+    """
+    image_hash, hash_str = _compute_hash(path, hash_str)
+    queue.put((path, image_hash, hash_str))
+
+
+def _compute_hash_iterator(folder, db, recursive=False):
+    queue = Queue()
+    # Submit all the jobs
+    iterator = iter_recursive(folder) if recursive else iter_folder(folder)
+    expected_results = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+        for path in iterator:
+            # Read from the DB before submitting
+            # since shelve concurrent read/write is not supported
+            hash_str = db.get(path)
+            executor.submit(_compute_hash_and_put, path, hash_str, queue)
+            expected_results += 1
+    # Wait on the queue
+    received_results = 0
+    while received_results < expected_results:
+        path, image_hash, hash_str = queue.get()
+        received_results += 1
+        if image_hash is None:
+            continue
+        yield path, image_hash, hash_str
+
+
 def _get_all_hashes(folder, db_path=None, db_flag='c', recursive=True):
     with open_shelve_db(db_path, flag=db_flag, writeback=True) as db:
         paths = []
         hashes_matrix = []
         hash_to_file = dict()  # Map from hash to list of files with that hash
         # Add hashes from the folder
-        iterator = iter_recursive(folder) if recursive else iter_folder(folder)
-        for path in iterator:
-            hash_str = db.get(path)
-            if hash_str is None:
-                # Re-compute the image hash
-                with _open_image(path) as image:
-                    if image is None:
-                        # Not an image file
-                        continue
-                    hash = imagehash.whash(image)
-                hash_str = str(hash)
-                if db_path is not None:
-                    # Save on DB
-                    db[path] = hash_str
-            else:
-                hash = imagehash.hex_to_hash(hash_str)
+        iterator = _compute_hash_iterator(folder, db, recursive=recursive)
+        for path, image_hash, hash_str in iterator:
+            if db_path is not None:
+                # Save on DB
+                # (shelve concurrent read/write is not supported so this should be done on the main thread)
+                db[path] = hash_str
             # Check If I already have this hash
             if hash_str not in hash_to_file:
                 # New hash!
@@ -115,7 +163,7 @@ def _get_all_hashes(folder, db_path=None, db_flag='c', recursive=True):
                 # Add to hash_matrix
                 paths.append(path)
                 # Add internal hash (numpy array) with shape (0, n_features)
-                hashes_matrix.append(hash.hash.reshape(1, -1))
+                hashes_matrix.append(image_hash.hash.reshape(1, -1))
             else:
                 # Old hash
                 hash_to_file[hash_str].append(path)
