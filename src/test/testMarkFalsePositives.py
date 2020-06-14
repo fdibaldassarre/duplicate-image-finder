@@ -45,16 +45,13 @@ class MarkFalsePositivesAT(Common):
         # - Ensure duplicates are found
         duplicates_folders = os.listdir(self.duplicates_folder)
         self.assertArrayEquals(duplicates_folders, ["info.json", "1_cat.png"])
+        self.assertDuplicates(self.duplicates_folder, "cat.png", "cat_duplicate.jpg", "cat_false_positive.jpg")
+        # - Remove real duplicates
         duplicates_cat = os.listdir(os.path.join(self.duplicates_folder, "1_cat.png"))
         if "1_cat_duplicate.jpg" in duplicates_cat:
-            self.assertArrayEquals(duplicates_cat, ["0_cat.png", "1_cat_duplicate.jpg", "2_cat_false_positive.jpg",
-                                                    "info.json"])
             real_duplicate = os.path.join(self.duplicates_folder, "1_cat.png/1_cat_duplicate.jpg")
         else:
-            self.assertArrayEquals(duplicates_cat, ["0_cat.png", "1_cat_false_positive.jpg", "2_cat_duplicate.jpg",
-                                                    "info.json"])
             real_duplicate = os.path.join(self.duplicates_folder, "1_cat.png/2_cat_duplicate.jpg")
-        # - Remove real duplicates
         os.remove(real_duplicate)
         # - Restore the false positives
         Restore.restore(self.duplicates_folder)
