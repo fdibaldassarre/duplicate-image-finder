@@ -8,7 +8,6 @@ from .. import Matcher
 from .. import Restore
 
 from .common import Common
-from .common import to_relpath
 from .common import AT_DATA_FOLDER
 
 
@@ -26,7 +25,7 @@ class MoveDuplicatesAT(Common):
 
     def testDuplicatesAreMoved(self):
         # When the duplicates are moved
-        Matcher.find_similar(self.test_folder, recursive=True, duplicates_folder=self.duplicates_folder)
+        Matcher.find_similar(self.test_folder, recursive=True, duplicates_folder=self.duplicates_folder, quiet=True)
         # Then the duplicates folder contains the duplicate files and info
         duplicates_folders = os.listdir(self.duplicates_folder)
         self.assertArrayEquals(duplicates_folders, ["1_005.png", "2_002.png"])
@@ -45,7 +44,7 @@ class MoveDuplicatesAT(Common):
 
     def testRestore(self):
         # When the duplicates are moved
-        Matcher.find_similar(self.test_folder, recursive=True, duplicates_folder=self.duplicates_folder)
+        Matcher.find_similar(self.test_folder, recursive=True, duplicates_folder=self.duplicates_folder, quiet=True)
         # Then the duplicates are not longer in the source folder
         cat_duplicate = os.path.join(self.test_folder, "001.jpg")
         cat_duplicate2 = os.path.join(self.test_folder, "folder1/003.jpg")
