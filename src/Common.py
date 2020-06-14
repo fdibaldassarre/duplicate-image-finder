@@ -3,6 +3,7 @@
 import os
 import json
 import shelve
+import sys
 
 INFO_FILE_NAME = "info.json"
 
@@ -116,3 +117,12 @@ def read_restore_info(folder):
         data = json.load(hand)
     return data['false_positives_db']
 
+
+def print_to_stdout(text):
+    """
+    Print to stdout and flush.
+
+    @param text Text to write to stdout
+    """
+    sys.stdout.write("%s\n" % text)
+    sys.stdout.flush()

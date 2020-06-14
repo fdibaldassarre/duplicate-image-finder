@@ -12,6 +12,7 @@ from .Common import write_restore_info
 from .Common import iter_folder
 from .Common import iter_recursive
 from .Common import open_shelve_db
+from .Common import print_to_stdout
 
 
 class _open_image:
@@ -146,6 +147,7 @@ def find_similar(folder, recursive=True, threshold=0.1, db_path=None,
     :param duplicates_folder: folder where the duplicate files will be moved to
     :return:
     """
+    print_to_stdout("# Loading images")
     result = dict()
     # Save restore info
     if duplicates_folder is not None:
@@ -155,9 +157,11 @@ def find_similar(folder, recursive=True, threshold=0.1, db_path=None,
     # Read data from folder and db
     paths, hashes_matrix, hash_to_file = _get_all_hashes(folder, db_path, recursive=recursive)
     # Build the tree
+    print_to_stdout("# Setting up index")
     ball_tree = _build_tree(hashes_matrix)
     marked_duplicates = dict()  # A list of paths already marked as duplicates
     # Find all the matches
+    print_to_stdout("# Marking duplicates")
     for i in range(len(paths)):
         path = paths[i]
         if path in marked_duplicates:
