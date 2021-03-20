@@ -4,6 +4,8 @@ A Python script to find duplicate images.
 
 ## Installation
 
+Python version: 3.9
+
 ```sh
 pip install -r requirements.txt
 ```
