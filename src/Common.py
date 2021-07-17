@@ -4,6 +4,7 @@ import os
 import json
 import shelve
 import sys
+import hashlib
 
 INFO_FILE_NAME = "info.json"
 
@@ -92,7 +93,7 @@ def remove_info_file(folder):
 
 def write_restore_info(folder, false_positives_db_path):
     """
-    Save the informations needed by the restore command
+    Save the information needed by the restore command
 
     :param folder: Duplicates folder
     :param false_positives_db_path: Path to the false positives database
@@ -122,7 +123,25 @@ def print_to_stdout(text):
     """
     Print to stdout and flush.
 
-    @param text Text to write to stdout
+    :param text: Text to write to stdout
     """
     sys.stdout.write("%s\n" % text)
     sys.stdout.flush()
+
+
+def compute_sha256(filepath):
+    """
+    Return the sha256 of a file.
+    Return None if the file does not exist.
+
+    :param filepath:
+    :return:
+    """
+    if not os.path.exists(filepath):
+        return None
+    sha256_hash = hashlib.sha256()
+    with open(filepath, "rb") as hand:
+        for byte_block in iter(lambda: hand.read(4096), b""):
+            sha256_hash.update(byte_block)
+        readable_hash = sha256_hash.hexdigest()
+    return readable_hash

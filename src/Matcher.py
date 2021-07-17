@@ -15,6 +15,7 @@ from .Common import iter_folder
 from .Common import iter_recursive
 from .Common import open_shelve_db
 from .Common import print_to_stdout
+from .Common import compute_sha256
 
 
 class _open_image:
@@ -234,7 +235,7 @@ def find_similar(folder, recursive=True, threshold=0.1, db_path=None,
                 if match != path and match not in path_false_positives:
                     all_duplicates.append(match)
                     marked_duplicates[match] = True
-        # Print the results
+        # Print the results or move the duplicates
         if len(all_duplicates) > 0:
             all_duplicates = sorted(all_duplicates)
             result[path] = all_duplicates
@@ -269,6 +270,8 @@ def _move_to_duplicates_folder(id, folder, *all_paths):
         return paths[0]
     # Find the best image
     best = _get_best_image(paths)
+    # Compute the best sha256
+    best_sha256 = compute_sha256(best)
     # Create target folder and move the duplicates (except the best image)
     best_name = os.path.basename(best)
     subfolder_name = "%d_%s" % (id, best_name)
@@ -283,8 +286,11 @@ def _move_to_duplicates_folder(id, folder, *all_paths):
     fileid = 1
     for path in paths:
         if path != best:
+            duplicate_sha256 = compute_sha256(path)
             basename = os.path.basename(path)
             target_name = "%d_%s" % (fileid, basename)
+            if duplicate_sha256 == best_sha256:
+                target_name = "%d_DUP_%s" % (fileid, basename)
             target_path = os.path.join(target_folder, target_name)
             duplicates.append((target_name, path))
             shutil.move(path, target_path)
