@@ -302,17 +302,22 @@ def _move_to_duplicates_folder(id, folder, *all_paths):
 def _get_best_image(paths):
     """
     Return the best image.
-    We will return the image with the highest resolution, a PNG in case of a tie.
+    We will return the image with the highest resolution.
+    In case of a tie PNG > ... > webp
 
     :param paths:
     :return: path of the best image
     """
     best = None
     best_res = None
+    best_format = None
     for path in paths:
         with Image.open(path) as image:
             _, resolution = image.size
-            if best is None or resolution > best_res or (resolution == best_res and image.format == 'PNG'):
+            img_format = image.format
+            if best is None or resolution > best_res or (resolution == best_res and \
+                                                         (image.format == 'PNG' or best_format == 'WEBP')):
                 best = path
                 best_res = resolution
+                best_format = img_format
     return best
