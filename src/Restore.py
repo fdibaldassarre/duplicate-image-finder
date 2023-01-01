@@ -8,6 +8,7 @@ from .Common import read_restore_info
 from .Common import remove_info_file
 from .Common import iter_folder
 from .Common import open_shelve_db
+from .Common import INFO_FILE_NAME
 
 
 def _save_false_positives(false_positives_db, false_positives_map):
@@ -83,3 +84,12 @@ def restore(duplicates_path):
     if restore_info is not None and len(false_positives_map) > 0:
         false_positives_db_path = restore_info
         _save_false_positives(false_positives_db_path, false_positives_map)
+    # Cleanup
+    rem_files = list(iter_folder(duplicates_path))
+    if len(rem_files) == 1 and os.path.isfile(rem_files[0]):
+        info_file = rem_files[0]
+        if os.path.basename(info_file) == INFO_FILE_NAME:
+            os.remove(info_file)
+            os.rmdir(duplicates_path)
+
+
