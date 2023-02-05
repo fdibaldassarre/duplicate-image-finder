@@ -55,6 +55,9 @@ class MarkFalsePositivesAT(Common):
         os.remove(real_duplicate)
         # - Restore the false positives
         Restore.restore(self.duplicates_folder)
+        # -- Duplicates folder was removed by the script
+        self.assertFalse(os.path.exists(self.duplicates_folder))
+        os.mkdir(self.duplicates_folder)
         # - Ensure false positive is restored
         false_positive_path = os.path.join(self.test_folder, "cat_false_positive.jpg")
         self.assertTrue(os.path.exists(false_positive_path))
