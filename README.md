@@ -25,3 +25,11 @@ Once the duplicates have been removed from the duplicates folder run
 to restore the false positives.
 
 The program stores false positives and they are not moved again on successive runs.
+
+## Library - Build
+
+To build the wheel run
+``
+python -m build
+``
+

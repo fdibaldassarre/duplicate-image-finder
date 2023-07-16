@@ -1,0 +1,17 @@
+[project]
+name = "dupimage"
+version = "0.0.1"
+authors = [
+  { name="Francesco Di Baldassarre", email="f.dibaldassarre@gmail.com" },
+]
+description = "Find duplicate images"
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
