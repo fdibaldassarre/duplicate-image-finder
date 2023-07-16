@@ -2,7 +2,7 @@
 
 import os
 
-from .. import Matcher
+from ..dupimage import Matcher
 from .common import Common
 from .common import to_relpath
 from .common import AT_DATA_FOLDER

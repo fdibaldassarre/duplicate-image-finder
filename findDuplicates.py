@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from src.Matcher import find_similar
+from src.dupimage.Matcher import find_similar
 import argparse
 import os
 

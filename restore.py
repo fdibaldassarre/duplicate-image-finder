@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
-from src.Restore import restore
+from src.dupimage.Restore import restore
 
 parser = argparse.ArgumentParser(description="Restore non duplicate images")
 parser.add_argument("folder", help="Duplicates folder")

@@ -4,8 +4,8 @@ import os
 import shutil
 import tempfile
 
-from .. import Matcher
-from .. import Restore
+from ..dupimage import Matcher
+from ..dupimage import Restore
 
 from .common import Common
 from .common import AT_DATA_FOLDER
