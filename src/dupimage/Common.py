@@ -11,7 +11,7 @@ INFO_FILE_NAME = "info.json"
 
 class open_shelve_db:
     """
-    Open a shelve db. Will automatically remove the file extension.
+    Open a shelve db.
     Allows empty db_path, in that case the returned db will be a
     dictionary.
     """
@@ -25,8 +25,7 @@ class open_shelve_db:
             self.db = dict()
             self.close_db = False
         else:
-            db_name, _ = os.path.splitext(self.db_path)
-            self.db = shelve.open(db_name, **self.kwargs)
+            self.db = shelve.open(self.db_path, **self.kwargs)
             self.close_db = True
         return self.db
 

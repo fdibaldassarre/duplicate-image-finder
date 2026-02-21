@@ -11,6 +11,13 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
 ]
+dependencies = [
+    "imagehash>=4.3.2",
+    "numpy>=1.21.6",
+    "pillow>=9.5.0",
+    "scikit-learn>=1.0.2",
+    "scipy>=1.7.3",
+]
 
 [build-system]
 requires = ["hatchling"]
